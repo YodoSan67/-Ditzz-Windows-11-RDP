@@ -22,7 +22,7 @@ jobs:
   rdp-session:
     name: "🖥️ Windows 11 ARM | RDP Session"
     runs-on: windows-11-arm
-    timeout-minutes: 360 # Batas waktu maksimal agar sesi tidak terputus
+    timeout-minutes: 360
 
     steps:
       - name: "┌ 📝 Parameter Sesi"
@@ -53,7 +53,6 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "🔐 Membuat kata sandi yang aman untuk pengguna RDP..."
-          # Membuat kata sandi acak dengan 16 karakter
           $password = -join ((65..90) + (97..122) + (48..57) | Get-Random -Count 16 | ForEach-Object { [char]$_ })
           $securePass = ConvertTo-SecureString $password -AsPlainText -Force
           
@@ -63,7 +62,6 @@ jobs:
           Add-LocalGroupMember -Group "Remote Desktop Users" -Member "ditzz"
           
           Write-Host "✅ Pengguna 'ditzz' berhasil dibuat." -ForegroundColor Green
-          
           echo "RDP_PASSWORD=$password" >> $env:GITHUB_ENV
 
           Write-Host "🔧 Mengaktifkan Remote Desktop dan membuka port firewall..."
@@ -79,9 +77,6 @@ jobs:
         run: |
           Write-Host "📥 Mengunduh Ngrok Agent untuk ARM64..."
           Invoke-WebRequest -Uri "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-arm64.zip" -OutFile "ngrok.zip"
-          
-          # === PERBAIKAN DI SINI ===
-          # Ekstrak file langsung ke direktori saat ini (.)
           Expand-Archive ngrok.zip -DestinationPath .
           
           Write-Host "🔑 Mengautentikasi Ngrok..."
@@ -95,22 +90,33 @@ jobs:
       - name: "└ ✅ Tampilkan Info Koneksi & Jaga Sesi"
         shell: pwsh
         run: |
-          Write-Host "⏳ Menunggu Ngrok Tunnel siap (15 detik)..."
-          Start-Sleep -s 15
-          
-          # Mengambil URL dari API lokal Ngrok
-          try {
-            $tunnels = Invoke-RestMethod -Uri "http://127.0.0.1:4040/api/tunnels"
-            $tcpTunnel = $tunnels.tunnels | Where-Object { $_.proto -eq 'tcp' }
-            if (!$tcpTunnel) {
-                Write-Error "❌ Gagal mendapatkan alamat Ngrok Tunnel! Coba jalankan ulang workflow."
-                exit 1
-            }
-          } catch {
-              Write-Error "❌ Gagal terhubung ke Ngrok API. Pastikan Ngrok berjalan dengan benar."
-              exit 1
+          # === PERBAIKAN DI SINI ===
+          # Loop untuk memeriksa secara aktif apakah API Ngrok sudah siap
+          $max_retries = 12
+          $retry_delay_seconds = 5
+          $tunnels = $null
+
+          Write-Host "📡 Mencari Ngrok API... (Maksimal $max_retries percobaan)"
+          for ($i = 1; $i -le $max_retries; $i++) {
+              try {
+                  $tunnels = Invoke-RestMethod -Uri "http://127.0.0.1:4040/api/tunnels" -ErrorAction Stop
+                  if ($tunnels.tunnels.Count -gt 0 -and $tunnels.tunnels[0].public_url) {
+                      Write-Host "✅ Ngrok API dan tunnel ditemukan pada percobaan ke-$i." -ForegroundColor Green
+                      break
+                  }
+              } catch {
+                  # API belum siap, ini wajar
+              }
+              if ($i -lt $max_retries) {
+                  Write-Host "Percobaan $i gagal. Menunggu $retry_delay_seconds detik sebelum mencoba lagi..."
+                  Start-Sleep -Seconds $retry_delay_seconds
+              } else {
+                  Write-Error "❌ Gagal terhubung ke Ngrok API setelah $max_retries percobaan. Proses dihentikan."
+                  exit 1
+              }
           }
           
+          $tcpTunnel = $tunnels.tunnels | Where-Object { $_.proto -eq 'tcp' }
           $rdpAddress = $tcpTunnel.public_url.Replace("tcp://", "")
           
           Write-Host "==========================================================================" -ForegroundColor Green
@@ -123,7 +129,6 @@ jobs:
           Write-Host "Gunakan informasi di atas untuk terhubung menggunakan Remote Desktop Client." -ForegroundColor Yellow
           Write-Host "Sesi ini akan tetap aktif hingga Anda membatalkan alur kerja secara manual." -ForegroundColor Yellow
           
-          # Loop tak terbatas untuk menjaga runner tetap aktif
           while ($true) {
               $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
               Write-Host "[$timestamp] Sesi RDP aktif. Tekan 'Cancel workflow' untuk menghentikan."
