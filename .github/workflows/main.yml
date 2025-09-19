@@ -1,26 +1,24 @@
 # -----------------------------------------------------------------------------------
-#            ditzz RDP | Powered by ditzz-devnest
+#            ditzz RDP | Powered by ditzz-devnest (v4 - Robust Tailscale)
 # -----------------------------------------------------------------------------------
 # Deskripsi:
-# Alur kerja ini akan menyiapkan sebuah runner GitHub Actions dengan sistem operasi
-# Windows 11 ARM, mengaktifkan Remote Desktop Protocol (RDP), dan membuat sebuah
-# tunnel aman menggunakan Ngrok. Anda akan mendapatkan kredensial untuk login.
+# Alur kerja ini menggunakan Tailscale untuk membuat koneksi RDP yang aman,
+# andal, dan bersih ke runner Windows 11 ARM.
 #
-# Cara Menjalankan:
-# 1. Buka tab "Actions" di repositori GitHub Anda.
-# 2. Pilih alur kerja "🚀 ditzz RDP (Ngrok | Win11-ARM)" dari daftar.
-# 3. Klik tombol "Run workflow", lalu klik "Run workflow" lagi.
-# 4. Tunggu hingga proses berjalan dan lihat output di langkah "✅ Tampilkan Info Koneksi".
+# Prasyarat:
+# 1. Buat secret GitHub bernama `TAILSCALE_AUTH_KEY`.
+# 2. Nilai secret HARUS berupa "Ephemeral" dan "Pre-authorized" Auth Key
+#    dari konsol admin Tailscale Anda.
 # -----------------------------------------------------------------------------------
 
-name: "🚀 ditzz RDP (Ngrok | Win11-ARM)"
+name: "🚀 ditzz RDP (Tailscale | Win11-ARM)"
 
 on:
   workflow_dispatch:
 
 jobs:
   rdp-session:
-    name: "🖥️ Windows 11 ARM | RDP Session"
+    name: "🖥️ Windows 11 ARM | RDP via Tailscale"
     runs-on: windows-11-arm
     timeout-minutes: 360
 
@@ -29,25 +27,24 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "==========================================================================" -ForegroundColor Green
-          Write-Host "             🚀 Memulai Sesi RDP untuk ditzz-devnest" -ForegroundColor Cyan
+          Write-Host "         🚀 Memulai Sesi RDP untuk ditzz-devnest via Tailscale" -ForegroundColor Cyan
           Write-Host "=========================================================================="
           Write-Host "🔹 Sistem Operasi : Windows 11 ARM"
-          Write-Host "🔹 Metode Akses   : RDP via Ngrok TCP Tunnel"
+          Write-Host "🔹 Metode Akses   : RDP via Tailscale Private Network"
           Write-Host "🔹 Aktor          : ${{ github.actor }}"
           Write-Host "🔹 Repositori     : ${{ github.repository }}"
           Write-Host "=========================================================================="
 
-      - name: "├ 🔐 Validasi Ngrok Auth Token"
+      - name: "├ 🔐 Validasi Tailscale Auth Key"
         shell: pwsh
         env:
-          NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
+          TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
         run: |
-          if (-not $env:NGROK_AUTH_TOKEN) {
-            Write-Error "❌ Secret 'NGROK_AUTH_TOKEN' tidak ditemukan!"
-            Write-Error "Harap tambahkan secret tersebut di pengaturan repositori Anda."
+          if (-not $env:TAILSCALE_AUTH_KEY) {
+            Write-Error "❌ Secret 'TAILSCALE_AUTH_KEY' tidak ditemukan!"
             exit 1
           }
-          Write-Host "✅ Secret Ngrok berhasil divalidasi." -ForegroundColor Green
+          Write-Host "✅ Secret Tailscale berhasil divalidasi." -ForegroundColor Green
           
       - name: "├ ⚙️ Konfigurasi RDP dan Buat Pengguna"
         shell: pwsh
@@ -57,7 +54,7 @@ jobs:
           $securePass = ConvertTo-SecureString $password -AsPlainText -Force
           
           Write-Host "👤 Membuat pengguna 'ditzz' dan menambahkannya ke grup Administrator..."
-          New-LocalUser -Name "ditzz" -Password $securePass -FullName "ditzz-devnest" -Description "Temporary RDP User"
+          New-LocalUser -Name "ditzz" -Password $securePass -FullName "ditzz-devnest"
           Add-LocalGroupMember -Group "Administrators" -Member "ditzz"
           Add-LocalGroupMember -Group "Remote Desktop Users" -Member "ditzz"
           
@@ -70,64 +67,61 @@ jobs:
           
           Write-Host "✅ Konfigurasi RDP dan Firewall selesai." -ForegroundColor Green
 
-      - name: "├ 🌐 Instal Ngrok dan Buat Tunnel"
+      - name: "├ 🌐 Instal & Konfigurasi Tailscale"
         shell: pwsh
         env:
-          NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
+          TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
         run: |
-          Write-Host "📥 Mengunduh Ngrok Agent untuk ARM64..."
-          Invoke-WebRequest -Uri "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-arm64.zip" -OutFile "ngrok.zip"
-          Expand-Archive ngrok.zip -DestinationPath .
+          Write-Host "📥 Mengunduh versi terbaru Tailscale..."
+          # Menggunakan URL yang selalu menunjuk ke versi stabil terbaru
+          Invoke-WebRequest -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-latest.msi" -OutFile "tailscale.msi"
           
-          Write-Host "🔑 Mengautentikasi Ngrok..."
-          .\ngrok.exe config add-authtoken $env:NGROK_AUTH_TOKEN
+          Write-Host "⚙️ Menginstal Tailscale..."
+          Start-Process msiexec.exe -ArgumentList "/i tailscale.msi /quiet" -Wait
           
-          Write-Host "🚀 Memulai Ngrok TCP Tunnel untuk port 3389..."
-          Start-Process -FilePath ".\ngrok.exe" -ArgumentList "tcp 3389 --log=stdout" -NoNewWindow
+          # Membuat hostname unik untuk runner ini
+          $hostname = "gh-runner-ditzz-${{ github.run_number }}"
+          echo "TS_HOSTNAME=$hostname" >> $env:GITHUB_ENV
           
-          Write-Host "✅ Ngrok Tunnel berhasil dimulai di background." -ForegroundColor Green
+          Write-Host "🚀 Menghubungkan ke Tailscale dengan hostname '$hostname'..."
+          & "C:\Program Files\Tailscale\tailscale.exe" up --authkey="$env:TAILSCALE_AUTH_KEY" --hostname="$hostname" --accept-routes
+
+          Write-Host "✅ Perintah koneksi Tailscale telah dieksekusi." -ForegroundColor Green
           
-      - name: "└ ✅ Tampilkan Info Koneksi & Jaga Sesi"
+      - name: "└ ✅ Verifikasi Koneksi & Tampilkan Info"
         shell: pwsh
         run: |
-          # === PERBAIKAN DI SINI ===
-          # Loop untuk memeriksa secara aktif apakah API Ngrok sudah siap
           $max_retries = 12
           $retry_delay_seconds = 5
-          $tunnels = $null
+          $ts_ip = $null
 
-          Write-Host "📡 Mencari Ngrok API... (Maksimal $max_retries percobaan)"
+          Write-Host "📡 Memverifikasi koneksi Tailscale..."
           for ($i = 1; $i -le $max_retries; $i++) {
-              try {
-                  $tunnels = Invoke-RestMethod -Uri "http://127.0.0.1:4040/api/tunnels" -ErrorAction Stop
-                  if ($tunnels.tunnels.Count -gt 0 -and $tunnels.tunnels[0].public_url) {
-                      Write-Host "✅ Ngrok API dan tunnel ditemukan pada percobaan ke-$i." -ForegroundColor Green
-                      break
-                  }
-              } catch {
-                  # API belum siap, ini wajar
+              $status = (& "C:\Program Files\Tailscale\tailscale.exe" status --json | ConvertFrom-Json)
+              if ($status.BackendState -eq "Running" -and $status.Self.Online) {
+                  $ts_ip = $status.Self.TailscaleIPs[0]
+                  Write-Host "✅ Koneksi Tailscale stabil dan online (IP: $ts_ip)." -ForegroundColor Green
+                  break
               }
               if ($i -lt $max_retries) {
-                  Write-Host "Percobaan $i gagal. Menunggu $retry_delay_seconds detik sebelum mencoba lagi..."
+                  Write-Host "Percobaan $i: Koneksi belum siap. Menunggu $retry_delay_seconds detik..."
                   Start-Sleep -Seconds $retry_delay_seconds
               } else {
-                  Write-Error "❌ Gagal terhubung ke Ngrok API setelah $max_retries percobaan. Proses dihentikan."
+                  Write-Error "❌ Gagal mendapatkan koneksi Tailscale yang stabil setelah $max_retries percobaan."
                   exit 1
               }
           }
           
-          $tcpTunnel = $tunnels.tunnels | Where-Object { $_.proto -eq 'tcp' }
-          $rdpAddress = $tcpTunnel.public_url.Replace("tcp://", "")
-          
           Write-Host "==========================================================================" -ForegroundColor Green
           Write-Host "                       ✅ SESI RDP ANDA SIAP ✅" -ForegroundColor Cyan
           Write-Host "=========================================================================="
-          Write-Host "💻 Alamat RDP      : $rdpAddress" -ForegroundColor White
+          Write-Host "Gunakan salah satu alamat di bawah ini untuk terhubung:"
+          Write-Host "💻 Alamat IP       : $ts_ip" -ForegroundColor White
+          Write-Host "🖥️  Hostname        : ${{ env.TS_HOSTNAME }}" -ForegroundColor White
+          Write-Host "--------------------------------------------------------------------------"
           Write-Host "👤 Nama Pengguna   : ditzz" -ForegroundColor White
           Write-Host "🔑 Kata Sandi      : ${{ env.RDP_PASSWORD }}" -ForegroundColor White
           Write-Host "=========================================================================="
-          Write-Host "Gunakan informasi di atas untuk terhubung menggunakan Remote Desktop Client." -ForegroundColor Yellow
-          Write-Host "Sesi ini akan tetap aktif hingga Anda membatalkan alur kerja secara manual." -ForegroundColor Yellow
           
           while ($true) {
               $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
