@@ -1,132 +1,47 @@
-name: ditzz RDP
+# =======================================================
+#       ditzz-devnest RDP Deployment Workflow
+# =======================================================
+# Deskripsi: Menjalankan skrip master dari Gist untuk 
+#            menyiapkan sesi RDP di Windows 11 ARM
+#            menggunakan Ngrok.
+# Architect: ditzz-devnest
+# =======================================================
+
+name: ditzz-devnest RDP Deployment
 
 on:
+  # Memungkinkan workflow ini dijalankan secara manual dari tab "Actions"
   workflow_dispatch:
 
 jobs:
-  secure-rdp:
-    runs-on: windows-latest
-    timeout-minutes: 3600
-
+  deploy:
+    # Menentukan nama job yang akan tampil di log GitHub
+    name: Deploy ditzz-devnest RDP Instance
+    
+    # Menggunakan runner Windows 11 berbasis ARM
+    runs-on: windows-11-arm
+    
+    # Mengatur batas waktu maksimal 6 jam (360 menit)
+    timeout-minutes: 360
+    
     steps:
-      - name: Configure Core RDP Settings
-        run: |
-          # Mengaktifkan Remote Desktop dan menyesuaikan pengaturan keamanan
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 0 -Force
-
-          # Menghapus aturan firewall yang ada untuk menghindari duplikasi
-          netsh advfirewall firewall delete rule name="RDP-Tailscale"
-          
-          # Menambahkan aturan firewall untuk mengizinkan koneksi RDP pada port 3389
-          netsh advfirewall firewall add rule name="RDP-Tailscale" dir=in action=allow protocol=TCP localport=3389
-
-          # Merestart layanan Remote Desktop agar perubahan diterapkan
-          Restart-Service -Name TermService -Force
-
-      - name: Create RDP User with Secure Password
-        run: |
-          # --- GANTI PASSWORD ANDA DI BARIS BERIKUT INI ---
-          $password = "GantiPasswordKuatAndaDisini123!" # <--- WAJIB GANTI DENGAN PASSWORD ANDA
-          
-          # Membuat pengguna baru dengan password yang sudah ditentukan
-          $securePass = ConvertTo-SecureString $password -AsPlainText -Force
-          New-LocalUser -Name "ditzz" -Password $securePass -AccountNeverExpires
-          Add-LocalGroupMember -Group "Administrators" -Member "ditzz"
-          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "ditzz"
-          
-          # Menyimpan kredensial untuk ditampilkan di log nanti
-          echo "RDP_CREDS=User: ditzz | Password: $password" >> $env:GITHUB_ENV
-          
-          # Memeriksa apakah pengguna berhasil dibuat
-          if (-not (Get-LocalUser -Name "ditzz")) {
-              Write-Error "Pembuatan pengguna gagal"
-              exit 1
-          }
-
-      - name: Download and Set Custom Wallpaper via Group Policy
+      # Satu langkah ini akan melakukan semua pekerjaan
+      - name: Execute ditzz-devnest Master Script
         shell: powershell
         run: |
-          # URL langsung ke file gambar yang stabil
-          $imageUrl = "https://images.pexels.com/photos/2049422/pexels-photo-2049422.jpeg"
-          # Simpan gambar di lokasi yang dapat diakses semua pengguna, seperti C:\
-          $imagePath = "C:\wallpaper.jpg"
-          
-          Write-Host "Mengunduh wallpaper..."
-          Invoke-WebRequest -Uri $imageUrl -OutFile $imagePath
-          
-          Write-Host "Menerapkan wallpaper melalui Local Group Policy..."
-          
-          # Path registri untuk kebijakan Desktop Wallpaper
-          $regPath = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\System"
-          
-          # Pastikan path registri ada sebelum menulis ke dalamnya
-          if (-not (Test-Path $regPath)) {
-              New-Item -Path $regPath -Force
-          }
-          
-          # Atur nilai registri untuk kebijakan wallpaper (berlaku untuk semua pengguna)
-          Set-ItemProperty -Path $regPath -Name "Wallpaper" -Value $imagePath
-          Set-ItemProperty -Path $regPath -Name "WallpaperStyle" -Value 2 # 2 = Stretch
-          
-          # Terapkan kebijakan grup segera tanpa perlu restart
-          gpupdate /force
-          
-          Write-Host "Kebijakan wallpaper telah diatur untuk semua pengguna."
+          # URL ini mengarah langsung ke skrip master di Gist Anda
+          $scriptUrl = "https://gist.githubusercontent.com/ditzz-devnest/b14521c3386e4f7819fed27e3ebbb522/raw/0710956e9e03589e6a68eedae1cb690b67c5d54b/setup-ditzz-nest.ps1"
 
-      - name: Install Tailscale
-        run: |
-          # Mengunduh dan menginstall Tailscale
-          $tsUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi"
-          $installerPath = "$env:TEMP\tailscale.msi"
-          Invoke-WebRequest -Uri $tsUrl -OutFile $installerPath
-          Start-Process msiexec.exe -ArgumentList "/i", "`"$installerPath`"", "/quiet", "/norestart" -Wait
-          Remove-Item $installerPath -Force
-
-      - name: Establish Tailscale Connection
-        run: |
-          # Menghubungkan Tailscale menggunakan auth key dari secrets
-          & "$env:ProgramFiles\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-runner-$env:GITHUB_RUN_ID
+          # Menampilkan pesan di log bahwa pengunduhan dimulai
+          Write-Host "Downloading master script from ditzz-devnest's Gist..."
           
-          # Menunggu hingga Tailscale mendapatkan alamat IP
-          $tsIP = $null
-          $retries = 0
-          while (-not $tsIP -and $retries -lt 10) {
-              $tsIP = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
-              Start-Sleep -Seconds 5
-              $retries++
-          }
+          # Mengunduh skrip dari URL di atas dan menyimpannya sebagai "setup.ps1"
+          Invoke-WebRequest -Uri $scriptUrl -OutFile "setup.ps1"
           
-          if (-not $tsIP) {
-              Write-Error "IP Tailscale tidak ditemukan. Keluar."
-              exit 1
-          }
-          echo "TAILSCALE_IP=$tsIP" >> $env:GITHUB_ENV
-      
-      - name: Verify RDP Accessibility
-        run: |
-          Write-Host "IP Tailscale: $env:TAILSCALE_IP"
+          # Menampilkan pesan di log bahwa eksekusi dimulai
+          Write-Host "Executing master script..."
           
-          # Memeriksa konektivitas ke port RDP 3389
-          $testResult = Test-NetConnection -ComputerName $env:TAILSCALE_IP -Port 3389
-          if (-not $testResult.TcpTestSucceeded) {
-              Write-Error "Koneksi TCP ke port RDP 3389 gagal"
-              exit 1
-          }
-          Write-Host "Konektivitas TCP berhasil!"
-
-      - name: Maintain Connection
-        run: |
-          # Menampilkan informasi akses RDP di log
-          Write-Host "`n=== AKSES RDP ==="
-          Write-Host "Alamat IP: $env:TAILSCALE_IP"
-          Write-Host "Username: ditzz"
-          Write-Host "Password: $(echo $env:RDP_CREDS | ForEach-Object { $_.Split('|')[1].Trim().Split(':')[1].Trim() })"
-          Write-Host "==================`n"
-          
-          # Menjaga runner tetap aktif agar koneksi tidak terputus
-          while ($true) {
-              Write-Host "[$(Get-Date)] RDP Aktif - Gunakan Ctrl+C di log workflow untuk membatalkan"
-              Start-Sleep -Seconds 300
-          }
+          # Menjalankan skrip yang sudah diunduh.
+          # Ia akan meneruskan nilai NGROK_AUTH_TOKEN dari GitHub Secrets
+          # ke dalam parameter -NgrokAuthToken di skrip PowerShell Anda.
+          .\setup.ps1 -NgrokAuthToken "${{ secrets.NGROK_AUTH_TOKEN }}"
