@@ -1,47 +1,44 @@
 # =======================================================
-#       ditzz-devnest RDP Deployment Workflow
+#       ditzz-devnest RDP Deployment Workflow v2.0
 # =======================================================
-# Deskripsi: Menjalankan skrip master dari Gist untuk 
-#            menyiapkan sesi RDP di Windows 11 ARM
-#            menggunakan Ngrok.
+# Deskripsi: Menggabungkan fitur input manual dan validasi
+#            secret dengan skrip master yang sudah diperbaiki.
 # Architect: ditzz-devnest
 # =======================================================
 
-name: ditzz-devnest RDP Deployment
+name: ditzz-devnest RDP Deployment (v2)
 
 on:
-  # Memungkinkan workflow ini dijalankan secara manual dari tab "Actions"
   workflow_dispatch:
+    inputs:
+      INSTANCE_LABEL:
+        description: 'Label untuk sesi ini (opsional, misal: "sesi-gaming")'
+        required: false
+        default: 'default'
 
 jobs:
   deploy:
-    # Menentukan nama job yang akan tampil di log GitHub
-    name: Deploy ditzz-devnest RDP Instance
-    
-    # Menggunakan runner Windows 11 berbasis ARM
+    name: "Deploy RDP Instance [${{ github.event.inputs.INSTANCE_LABEL }}]"
     runs-on: windows-11-arm
-    
-    # Mengatur batas waktu maksimal 6 jam (360 menit)
     timeout-minutes: 360
     
     steps:
-      # Satu langkah ini akan melakukan semua pekerjaan
-      - name: Execute ditzz-devnest Master Script
+      - name: "[1] Validate Secrets"
         shell: powershell
         run: |
-          # URL ini mengarah langsung ke skrip master di Gist Anda
+          if (-not "${{ secrets.NGROK_AUTH_TOKEN }}") {
+            Write-Error "FATAL: Secret 'NGROK_AUTH_TOKEN' not found. Please set it in repository Settings > Secrets and variables > Actions."
+            exit 1
+          }
+          Write-Host "-> Secret NGROK_AUTH_TOKEN validated successfully."
+
+      - name: "[2] Execute ditzz-devnest Master Script"
+        shell: powershell
+        run: |
           $scriptUrl = "https://gist.githubusercontent.com/ditzz-devnest/b14521c3386e4f7819fed27e3ebbb522/raw/0710956e9e03589e6a68eedae1cb690b67c5d54b/setup-ditzz-nest.ps1"
 
-          # Menampilkan pesan di log bahwa pengunduhan dimulai
-          Write-Host "Downloading master script from ditzz-devnest's Gist..."
-          
-          # Mengunduh skrip dari URL di atas dan menyimpannya sebagai "setup.ps1"
+          Write-Host "-> Downloading master script from ditzz-devnest's Gist..."
           Invoke-WebRequest -Uri $scriptUrl -OutFile "setup.ps1"
           
-          # Menampilkan pesan di log bahwa eksekusi dimulai
-          Write-Host "Executing master script..."
-          
-          # Menjalankan skrip yang sudah diunduh.
-          # Ia akan meneruskan nilai NGROK_AUTH_TOKEN dari GitHub Secrets
-          # ke dalam parameter -NgrokAuthToken di skrip PowerShell Anda.
+          Write-Host "-> Executing master script..."
           .\setup.ps1 -NgrokAuthToken "${{ secrets.NGROK_AUTH_TOKEN }}"
