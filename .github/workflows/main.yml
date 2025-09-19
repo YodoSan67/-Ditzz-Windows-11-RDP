@@ -11,82 +11,58 @@ jobs:
     steps:
       - name: Configure Core RDP Settings
         run: |
-          # Enable Remote Desktop and adjust security settings for direct connection
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
-                             -Name "fDenyTSConnections" -Value 0 -Force
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
-                             -Name "UserAuthentication" -Value 0 -Force
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
-                             -Name "SecurityLayer" -Value 0 -Force
-
-          # Remove any existing rule with the same name to avoid duplication
+          # (Kode ini tetap sama)
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 0 -Force
           netsh advfirewall firewall delete rule name="RDP-Tailscale"
-          
-          # Allow any incoming connection on port 3389
-          netsh advfirewall firewall add rule name="RDP-Tailscale" `
-            dir=in action=allow protocol=TCP localport=3389
-
-          # Restart the Remote Desktop service to ensure changes take effect
+          netsh advfirewall firewall add rule name="RDP-Tailscale" dir=in action=allow protocol=TCP localport=3389
           Restart-Service -Name TermService -Force
 
       - name: Create RDP User with Secure Password
         run: |
           # --- GANTI PASSWORD ANDA DI SINI ---
-          $password = "GantiPasswordKuatAndaDisini123!" # <--- Ganti dengan password yang Anda inginkan
+          $password = "GantiPasswordKuatAndaDisini123!"
           
-          # Membuat pengguna baru dengan password yang sudah ditentukan
           $securePass = ConvertTo-SecureString $password -AsPlainText -Force
           New-LocalUser -Name "ditzz" -Password $securePass -AccountNeverExpires
           Add-LocalGroupMember -Group "Administrators" -Member "ditzz"
           Add-LocalGroupMember -Group "Remote Desktop Users" -Member "ditzz"
-          
-          # Menyimpan kredensial untuk ditampilkan di log nanti
           echo "RDP_CREDS=User: ditzz | Password: $password" >> $env:GITHUB_ENV
-          
-          if (-not (Get-LocalUser -Name "ditzz")) {
-              Write-Error "User creation failed"
-              exit 1
-          }
+          if (-not (Get-LocalUser -Name "ditzz")) { Write-Error "User creation failed"; exit 1 }
 
-      - name: Download and Set Custom Wallpaper
+      # === BLOK YANG DIPERBARUI ===
+      - name: Download and Set Custom Wallpaper for New Users
+        shell: powershell
         run: |
-          # URL gambar wallpaper yang Anda berikan
-          $imageUrl = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQx_P3RS0Y9zveM2eRcVw5jWj1t2--fKZLgOYjkoCHzq0R1cEGOlANLyBlu&s=10"
-          
-          # Lokasi penyimpanan gambar di runner
+          $imageUrl = "https://encrypted-tbn0.gstatic.com/images?q=tbn:AN9GcQx_P3RS0Y9zveM2eRcVw5jWj1t2--fKZLgOYjkoCHzq0R1cEGOlANLyBlu&s=10"
           $imagePath = "C:\wallpaper.jpg"
           
-          # Unduh gambar
           Write-Host "Downloading wallpaper..."
           Invoke-WebRequest -Uri $imageUrl -OutFile $imagePath
           
-          # Atur gambar sebagai wallpaper
-          Write-Host "Setting wallpaper..."
-          Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name Wallpaper -Value $imagePath
-          Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'WallpaperStyle' -Value 2 # 2 = Stretch
-          Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'TileWallpaper' -Value 0
+          Write-Host "Applying wallpaper to the Default User profile..."
+          reg load HKU\DefaultUser "C:\Users\Default\NTUSER.DAT"
+          Set-ItemProperty -Path 'Registry::HKU\DefaultUser\Control Panel\Desktop' -Name Wallpaper -Value $imagePath
+          Set-ItemProperty -Path 'Registry::HKU\DefaultUser\Control Panel\Desktop' -Name 'WallpaperStyle' -Value 2
+          Set-ItemProperty -Path 'Registry::HKU\DefaultUser\Control Panel\Desktop' -Name 'TileWallpaper' -Value 0
+          reg unload HKU\DefaultUser
           
-          # Terapkan perubahan wallpaper secara langsung
-          RUNDLL32.EXE user32.dll,UpdatePerUserSystemParameters
-          
-          Write-Host "Wallpaper has been successfully changed."
+          Write-Host "Default User profile has been updated. Wallpaper will be set for new user 'ditzz'."
 
       - name: Install Tailscale
         run: |
-          # Menggunakan versi Tailscale yang stabil
+          # (Kode ini tetap sama)
           $tsUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi"
           $installerPath = "$env:TEMP\tailscale.msi"
-          
           Invoke-WebRequest -Uri $tsUrl -OutFile $installerPath
           Start-Process msiexec.exe -ArgumentList "/i", "`"$installerPath`"", "/quiet", "/norestart" -Wait
           Remove-Item $installerPath -Force
 
       - name: Establish Tailscale Connection
         run: |
-          # Menghubungkan Tailscale menggunakan auth key dari secrets
+          # (Kode ini tetap sama)
           & "$env:ProgramFiles\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-runner-$env:GITHUB_RUN_ID
-          
-          # Tunggu hingga Tailscale mendapatkan alamat IP
           $tsIP = $null
           $retries = 0
           while (-not $tsIP -and $retries -lt 10) {
@@ -94,35 +70,25 @@ jobs:
               Start-Sleep -Seconds 5
               $retries++
           }
-          
-          if (-not $tsIP) {
-              Write-Error "Tailscale IP not assigned. Exiting."
-              exit 1
-          }
+          if (-not $tsIP) { Write-Error "Tailscale IP not assigned. Exiting."; exit 1 }
           echo "TAILSCALE_IP=$tsIP" >> $env:GITHUB_ENV
       
       - name: Verify RDP Accessibility
         run: |
+          # (Kode ini tetap sama)
           Write-Host "Tailscale IP: $env:TAILSCALE_IP"
-          
-          # Memeriksa koneksi ke port RDP 3389
           $testResult = Test-NetConnection -ComputerName $env:TAILSCALE_IP -Port 3389
-          if (-not $testResult.TcpTestSucceeded) {
-              Write-Error "TCP connection to RDP port 3389 failed"
-              exit 1
-          }
+          if (-not $testResult.TcpTestSucceeded) { Write-Error "TCP connection to RDP port 3389 failed"; exit 1 }
           Write-Host "TCP connectivity successful!"
 
       - name: Maintain Connection
         run: |
-          # Menampilkan informasi akses RDP di log
+          # (Kode ini tetap sama)
           Write-Host "`n=== RDP ACCESS ==="
           Write-Host "Address: $env:TAILSCALE_IP"
           Write-Host "Username: ditzz"
-          Write-Host "Password: $(echo $env:RDP_CREDS | ForEach-Object { $_.Split('|')[1].Trim().Split(':')[1].Trim() })" # Menampilkan password saja
+          Write-Host "Password: $(echo $env:RDP_CREDS | ForEach-Object { $_.Split('|')[1].Trim().Split(':')[1].Trim() })"
           Write-Host "==================`n"
-          
-          # Menjaga runner tetap aktif agar koneksi tidak terputus
           while ($true) {
               Write-Host "[$(Get-Date)] RDP Active - Use Ctrl+C in workflow to terminate"
               Start-Sleep -Seconds 300
