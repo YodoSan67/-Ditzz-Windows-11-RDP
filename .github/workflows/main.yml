@@ -1,137 +1,129 @@
-# -----------------------------------------------------------------------------------
-#            ditzz RDP | Powered by ditzz-devnest (v5 - ARM64 Fixed)
-# -----------------------------------------------------------------------------------
-# Deskripsi:
-# Alur kerja ini menggunakan Tailscale untuk membuat koneksi RDP yang aman,
-# andal, dan bersih ke runner Windows 11 ARM.
-#
-# Prasyarat:
-# 1. Buat secret GitHub bernama `TAILSCALE_AUTH_KEY`.
-# 2. Nilai secret HARUS berupa "Ephemeral" dan "Pre-authorized" Auth Key
-#    dari konsol admin Tailscale Anda.
-# -----------------------------------------------------------------------------------
-
-name: "🚀 ditzz RDP (Tailscale | Win11-ARM)"
+name: ditzz RDP
 
 on:
   workflow_dispatch:
 
 jobs:
-  rdp-session:
-    name: "🖥️ Windows 11 ARM | RDP via Tailscale"
-    runs-on: windows-11-arm
-    timeout-minutes: 360
+  secure-rdp:
+    runs-on: windows-latest
+    timeout-minutes: 3600
 
     steps:
-      - name: "┌ 📝 Parameter Sesi"
-        shell: pwsh
+      - name: Configure Core RDP Settings
         run: |
-          Write-Host "==========================================================================" -ForegroundColor Green
-          Write-Host "         🚀 Memulai Sesi RDP untuk ditzz-devnest via Tailscale" -ForegroundColor Cyan
-          Write-Host "=========================================================================="
-          Write-Host "🔹 Sistem Operasi : Windows 11 ARM"
-          Write-Host "🔹 Metode Akses   : RDP via Tailscale Private Network"
-          Write-Host "🔹 Aktor          : ${{ github.actor }}"
-          Write-Host "🔹 Repositori     : ${{ github.repository }}"
-          Write-Host "=========================================================================="
+          # Enable Remote Desktop and adjust security settings for direct connection
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
+                             -Name "fDenyTSConnections" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
+                             -Name "UserAuthentication" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
+                             -Name "SecurityLayer" -Value 0 -Force
 
-      - name: "├ 🔐 Validasi Tailscale Auth Key"
-        shell: pwsh
-        env:
-          TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
-        run: |
-          if (-not $env:TAILSCALE_AUTH_KEY) {
-            Write-Error "❌ Secret 'TAILSCALE_AUTH_KEY' tidak ditemukan!"
-            exit 1
-          }
-          Write-Host "✅ Secret Tailscale berhasil divalidasi." -ForegroundColor Green
+          # Remove any existing rule with the same name to avoid duplication
+          netsh advfirewall firewall delete rule name="RDP-Tailscale"
           
-      - name: "├ ⚙️ Konfigurasi RDP dan Buat Pengguna"
-        shell: pwsh
+          # Allow any incoming connection on port 3389
+          netsh advfirewall firewall add rule name="RDP-Tailscale" `
+            dir=in action=allow protocol=TCP localport=3389
+
+          # Restart the Remote Desktop service to ensure changes take effect
+          Restart-Service -Name TermService -Force
+
+      - name: Create RDP User with Secure Password
         run: |
-          Write-Host "🔐 Membuat kata sandi yang aman untuk pengguna RDP..."
-          $password = -join ((65..90) + (97..122) + (48..57) | Get-Random -Count 16 | ForEach-Object { [char]$_ })
+          # --- GANTI PASSWORD ANDA DI SINI ---
+          $password = "GantiPasswordKuatAndaDisini123!" # <--- Ganti dengan password yang Anda inginkan
+          
+          # Membuat pengguna baru dengan password yang sudah ditentukan
           $securePass = ConvertTo-SecureString $password -AsPlainText -Force
-          
-          Write-Host "👤 Membuat pengguna 'ditzz' dan menambahkannya ke grup Administrator..."
-          New-LocalUser -Name "ditzz" -Password $securePass -FullName "ditzz-devnest"
+          New-LocalUser -Name "ditzz" -Password $securePass -AccountNeverExpires
           Add-LocalGroupMember -Group "Administrators" -Member "ditzz"
           Add-LocalGroupMember -Group "Remote Desktop Users" -Member "ditzz"
           
-          Write-Host "✅ Pengguna 'ditzz' berhasil dibuat." -ForegroundColor Green
-          echo "RDP_PASSWORD=$password" >> $env:GITHUB_ENV
-
-          Write-Host "🔧 Mengaktifkan Remote Desktop dan membuka port firewall..."
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
-          netsh advfirewall firewall add rule name="Allow RDP" dir=in action=allow protocol=TCP localport=3389
+          # Menyimpan kredensial untuk ditampilkan di log nanti
+          echo "RDP_CREDS=User: ditzz | Password: $password" >> $env:GITHUB_ENV
           
-          Write-Host "✅ Konfigurasi RDP dan Firewall selesai." -ForegroundColor Green
+          if (-not (Get-LocalUser -Name "ditzz")) {
+              Write-Error "User creation failed"
+              exit 1
+          }
 
-      - name: "├ 🌐 Instal & Konfigurasi Tailscale"
-        shell: pwsh
-        env:
-          TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
+      - name: Download and Set Custom Wallpaper
         run: |
-          Write-Host "📥 Mengunduh versi terbaru Tailscale untuk ARM64..."
+          # URL gambar wallpaper yang Anda berikan
+          $imageUrl = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQx_P3RS0Y9zveM2eRcVw5jWj1t2--fKZLgOYjkoCHzq0R1cEGOlANLyBlu&s=10"
           
-          # === PERBAIKAN DI SINI: Menggunakan URL yang benar untuk ARM64 ===
-          $url = "https://pkgs.tailscale.com/stable/tailscale-setup-stable-arm64.msi"
-          Invoke-WebRequest -Uri $url -OutFile "tailscale.msi"
+          # Lokasi penyimpanan gambar di runner
+          $imagePath = "C:\wallpaper.jpg"
           
-          Write-Host "⚙️ Menginstal Tailscale..."
-          Start-Process msiexec.exe -ArgumentList "/i tailscale.msi /quiet" -Wait
+          # Unduh gambar
+          Write-Host "Downloading wallpaper..."
+          Invoke-WebRequest -Uri $imageUrl -OutFile $imagePath
           
-          # Membuat hostname unik untuk runner ini
-          $hostname = "gh-runner-ditzz-${{ github.run_number }}"
-          echo "TS_HOSTNAME=$hostname" >> $env:GITHUB_ENV
+          # Atur gambar sebagai wallpaper
+          Write-Host "Setting wallpaper..."
+          Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name Wallpaper -Value $imagePath
+          Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'WallpaperStyle' -Value 2 # 2 = Stretch
+          Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'TileWallpaper' -Value 0
           
-          Write-Host "🚀 Menghubungkan ke Tailscale dengan hostname '$hostname'..."
-          & "C:\Program Files\Tailscale\tailscale.exe" up --authkey="$env:TAILSCALE_AUTH_KEY" --hostname="$hostname" --accept-routes
+          # Terapkan perubahan wallpaper secara langsung
+          RUNDLL32.EXE user32.dll,UpdatePerUserSystemParameters
+          
+          Write-Host "Wallpaper has been successfully changed."
 
-          Write-Host "✅ Perintah koneksi Tailscale telah dieksekusi." -ForegroundColor Green
-          
-      - name: "└ ✅ Verifikasi Koneksi & Tampilkan Info"
-        shell: pwsh
+      - name: Install Tailscale
         run: |
-          $max_retries = 12
-          $retry_delay_seconds = 5
-          $ts_ip = $null
+          # Menggunakan versi Tailscale yang stabil
+          $tsUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi"
+          $installerPath = "$env:TEMP\tailscale.msi"
+          
+          Invoke-WebRequest -Uri $tsUrl -OutFile $installerPath
+          Start-Process msiexec.exe -ArgumentList "/i", "`"$installerPath`"", "/quiet", "/norestart" -Wait
+          Remove-Item $installerPath -Force
 
-          Write-Host "📡 Memverifikasi koneksi Tailscale..."
-          for ($i = 1; $i -le $max_retries; $i++) {
-              # Menambahkan delay kecil di awal untuk memberi waktu proses tailscale dimulai
-              Start-Sleep -Seconds 2
-              $status = (& "C:\Program Files\Tailscale\tailscale.exe" status --json | ConvertFrom-Json)
-              if ($status.BackendState -eq "Running" -and $status.Self.Online) {
-                  $ts_ip = $status.Self.TailscaleIPs[0]
-                  Write-Host "✅ Koneksi Tailscale stabil dan online (IP: $ts_ip)." -ForegroundColor Green
-                  break
-              }
-              if ($i -lt $max_retries) {
-                  Write-Host "Percobaan $i: Koneksi belum siap. Menunggu $retry_delay_seconds detik..."
-                  Start-Sleep -Seconds $retry_delay_seconds
-              } else {
-                  Write-Error "❌ Gagal mendapatkan koneksi Tailscale yang stabil setelah $max_retries percobaan."
-                  # Tampilkan status terakhir untuk debugging jika gagal
-                  Write-Host "Status Tailscale Terakhir:"
-                  & "C:\Program Files\Tailscale\tailscale.exe" status
-                  exit 1
-              }
+      - name: Establish Tailscale Connection
+        run: |
+          # Menghubungkan Tailscale menggunakan auth key dari secrets
+          & "$env:ProgramFiles\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-runner-$env:GITHUB_RUN_ID
+          
+          # Tunggu hingga Tailscale mendapatkan alamat IP
+          $tsIP = $null
+          $retries = 0
+          while (-not $tsIP -and $retries -lt 10) {
+              $tsIP = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
+              Start-Sleep -Seconds 5
+              $retries++
           }
           
-          Write-Host "==========================================================================" -ForegroundColor Green
-          Write-Host "                       ✅ SESI RDP ANDA SIAP ✅" -ForegroundColor Cyan
-          Write-Host "=========================================================================="
-          Write-Host "Gunakan salah satu alamat di bawah ini untuk terhubung:"
-          Write-Host "💻 Alamat IP       : $ts_ip" -ForegroundColor White
-          Write-Host "🖥️  Hostname        : ${{ env.TS_HOSTNAME }}" -ForegroundColor White
-          Write-Host "--------------------------------------------------------------------------"
-          Write-Host "👤 Nama Pengguna   : ditzz" -ForegroundColor White
-          Write-Host "🔑 Kata Sandi      : ${{ env.RDP_PASSWORD }}" -ForegroundColor White
-          Write-Host "=========================================================================="
+          if (-not $tsIP) {
+              Write-Error "Tailscale IP not assigned. Exiting."
+              exit 1
+          }
+          echo "TAILSCALE_IP=$tsIP" >> $env:GITHUB_ENV
+      
+      - name: Verify RDP Accessibility
+        run: |
+          Write-Host "Tailscale IP: $env:TAILSCALE_IP"
           
+          # Memeriksa koneksi ke port RDP 3389
+          $testResult = Test-NetConnection -ComputerName $env:TAILSCALE_IP -Port 3389
+          if (-not $testResult.TcpTestSucceeded) {
+              Write-Error "TCP connection to RDP port 3389 failed"
+              exit 1
+          }
+          Write-Host "TCP connectivity successful!"
+
+      - name: Maintain Connection
+        run: |
+          # Menampilkan informasi akses RDP di log
+          Write-Host "`n=== RDP ACCESS ==="
+          Write-Host "Address: $env:TAILSCALE_IP"
+          Write-Host "Username: ditzz"
+          Write-Host "Password: $(echo $env:RDP_CREDS | ForEach-Object { $_.Split('|')[1].Trim().Split(':')[1].Trim() })" # Menampilkan password saja
+          Write-Host "==================`n"
+          
+          # Menjaga runner tetap aktif agar koneksi tidak terputus
           while ($true) {
-              $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-              Write-Host "[$timestamp] Sesi RDP aktif. Tekan 'Cancel workflow' untuk menghentikan."
+              Write-Host "[$(Get-Date)] RDP Active - Use Ctrl+C in workflow to terminate"
               Start-Sleep -Seconds 300
           }
