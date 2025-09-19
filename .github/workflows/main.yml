@@ -1,18 +1,18 @@
 # =======================================================
-#       ditzz-devnest RDP Deployment Workflow v2.0
+#       ditzz-devnest RDP Deployment Workflow v2.1
 # =======================================================
-# Deskripsi: Menggabungkan fitur input manual dan validasi
-#            secret dengan skrip master yang sudah diperbaiki.
+# Deskripsi: Versi final yang menggunakan skrip master 
+#            pribadi dari Gist dengan perbaikan koneksi Ngrok.
 # Architect: ditzz-devnest
 # =======================================================
 
-name: ditzz-devnest RDP Deployment (v2)
+name: ditzz-devnest RDP Deployment (Final)
 
 on:
   workflow_dispatch:
     inputs:
       INSTANCE_LABEL:
-        description: 'Label untuk sesi ini (opsional, misal: "sesi-gaming")'
+        description: 'Label untuk sesi RDP ini (opsional)'
         required: false
         default: 'default'
 
@@ -27,18 +27,19 @@ jobs:
         shell: powershell
         run: |
           if (-not "${{ secrets.NGROK_AUTH_TOKEN }}") {
-            Write-Error "FATAL: Secret 'NGROK_AUTH_TOKEN' not found. Please set it in repository Settings > Secrets and variables > Actions."
+            Write-Error "FATAL: Secret 'NGROK_AUTH_TOKEN' tidak ditemukan. Harap atur di Settings > Secrets and variables > Actions."
             exit 1
           }
-          Write-Host "-> Secret NGROK_AUTH_TOKEN validated successfully."
+          Write-Host "-> Secret NGROK_AUTH_TOKEN berhasil divalidasi."
 
       - name: "[2] Execute ditzz-devnest Master Script"
         shell: powershell
         run: |
-          $scriptUrl = "https://gist.githubusercontent.com/ditzz-devnest/b14521c3386e4f7819fed27e3ebbb522/raw/0710956e9e03589e6a68eedae1cb690b67c5d54b/setup-ditzz-nest.ps1"
+          # URL final yang mengarah ke skrip Gist Anda yang sudah diperbaiki
+          $scriptUrl = "https://gist.githubusercontent.com/ditzz-devnest/b14521c3386e4f7819fed27e3ebbb522/raw/8c69f3e3202a478b6690753e77086d2d6d89c4be/setup-ditzz-nest.ps1"
 
-          Write-Host "-> Downloading master script from ditzz-devnest's Gist..."
+          Write-Host "-> Mengunduh skrip master dari ditzz-devnest..."
           Invoke-WebRequest -Uri $scriptUrl -OutFile "setup.ps1"
           
-          Write-Host "-> Executing master script..."
+          Write-Host "-> Menjalankan skrip master..."
           .\setup.ps1 -NgrokAuthToken "${{ secrets.NGROK_AUTH_TOKEN }}"
