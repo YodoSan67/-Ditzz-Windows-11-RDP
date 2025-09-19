@@ -72,14 +72,17 @@ jobs:
           
           Write-Host "✅ Konfigurasi RDP dan Firewall selesai." -ForegroundColor Green
 
-      - name: "├  tunnel 🌐 Instal Ngrok dan Buat Tunnel"
+      - name: "├ 🌐 Instal Ngrok dan Buat Tunnel"
         shell: pwsh
         env:
           NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
         run: |
           Write-Host "📥 Mengunduh Ngrok Agent untuk ARM64..."
           Invoke-WebRequest -Uri "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-arm64.zip" -OutFile "ngrok.zip"
-          Expand-Archive ngrok.zip
+          
+          # === PERBAIKAN DI SINI ===
+          # Ekstrak file langsung ke direktori saat ini (.)
+          Expand-Archive ngrok.zip -DestinationPath .
           
           Write-Host "🔑 Mengautentikasi Ngrok..."
           .\ngrok.exe config add-authtoken $env:NGROK_AUTH_TOKEN
@@ -92,14 +95,19 @@ jobs:
       - name: "└ ✅ Tampilkan Info Koneksi & Jaga Sesi"
         shell: pwsh
         run: |
-          Write-Host "⏳ Menunggu Ngrok Tunnel siap (10 detik)..."
-          Start-Sleep -s 10
+          Write-Host "⏳ Menunggu Ngrok Tunnel siap (15 detik)..."
+          Start-Sleep -s 15
           
           # Mengambil URL dari API lokal Ngrok
-          $tunnels = Invoke-RestMethod -Uri "http://127.0.0.1:4040/api/tunnels"
-          $tcpTunnel = $tunnels.tunnels | Where-Object { $_.proto -eq 'tcp' }
-          if (!$tcpTunnel) {
-              Write-Error "❌ Gagal mendapatkan alamat Ngrok Tunnel!"
+          try {
+            $tunnels = Invoke-RestMethod -Uri "http://127.0.0.1:4040/api/tunnels"
+            $tcpTunnel = $tunnels.tunnels | Where-Object { $_.proto -eq 'tcp' }
+            if (!$tcpTunnel) {
+                Write-Error "❌ Gagal mendapatkan alamat Ngrok Tunnel! Coba jalankan ulang workflow."
+                exit 1
+            }
+          } catch {
+              Write-Error "❌ Gagal terhubung ke Ngrok API. Pastikan Ngrok berjalan dengan benar."
               exit 1
           }
           
