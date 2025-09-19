@@ -45,37 +45,41 @@ jobs:
               exit 1
           }
 
-      - name: Download and Set Custom Wallpaper for New Users
+      - name: Download and Set Custom Wallpaper via Group Policy
         shell: powershell
         run: |
-          # URL langsung ke file gambar dari Pexels
+          # URL langsung ke file gambar yang stabil
           $imageUrl = "https://images.pexels.com/photos/2049422/pexels-photo-2049422.jpeg"
+          # Simpan gambar di lokasi yang dapat diakses semua pengguna, seperti C:\
           $imagePath = "C:\wallpaper.jpg"
           
-          Write-Host "Mengunduh wallpaper dari $imageUrl"
+          Write-Host "Mengunduh wallpaper..."
           Invoke-WebRequest -Uri $imageUrl -OutFile $imagePath
           
-          Write-Host "Menerapkan wallpaper ke profil 'Default User'..."
+          Write-Host "Menerapkan wallpaper melalui Local Group Policy..."
           
-          # Memuat registri milik Default User agar bisa diubah
-          reg load HKU\DefaultUser "C:\Users\Default\NTUSER.DAT"
+          # Path registri untuk kebijakan Desktop Wallpaper
+          $regPath = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\System"
           
-          # Mengatur wallpaper di dalam registri Default User
-          Set-ItemProperty -Path 'Registry::HKU\DefaultUser\Control Panel\Desktop' -Name Wallpaper -Value $imagePath
-          Set-ItemProperty -Path 'Registry::HKU\DefaultUser\Control Panel\Desktop' -Name 'WallpaperStyle' -Value 2 # 2 = Stretch
-          Set-ItemProperty -Path 'Registry::HKU\DefaultUser\Control Panel\Desktop' -Name 'TileWallpaper' -Value 0
+          # Pastikan path registri ada sebelum menulis ke dalamnya
+          if (-not (Test-Path $regPath)) {
+              New-Item -Path $regPath -Force
+          }
           
-          # Melepaskan registri untuk menyimpan perubahan
-          reg unload HKU\DefaultUser
+          # Atur nilai registri untuk kebijakan wallpaper (berlaku untuk semua pengguna)
+          Set-ItemProperty -Path $regPath -Name "Wallpaper" -Value $imagePath
+          Set-ItemProperty -Path $regPath -Name "WallpaperStyle" -Value 2 # 2 = Stretch
           
-          Write-Host "Profil 'Default User' telah diperbarui. Wallpaper akan terpasang untuk pengguna baru."
+          # Terapkan kebijakan grup segera tanpa perlu restart
+          gpupdate /force
+          
+          Write-Host "Kebijakan wallpaper telah diatur untuk semua pengguna."
 
       - name: Install Tailscale
         run: |
-          # Menggunakan versi Tailscale yang stabil
+          # Mengunduh dan menginstall Tailscale
           $tsUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi"
           $installerPath = "$env:TEMP\tailscale.msi"
-          
           Invoke-WebRequest -Uri $tsUrl -OutFile $installerPath
           Start-Process msiexec.exe -ArgumentList "/i", "`"$installerPath`"", "/quiet", "/norestart" -Wait
           Remove-Item $installerPath -Force
