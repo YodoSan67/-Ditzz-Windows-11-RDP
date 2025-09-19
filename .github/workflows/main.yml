@@ -1,5 +1,5 @@
 # -----------------------------------------------------------------------------------
-#            ditzz RDP | Powered by ditzz-devnest (v4 - Robust Tailscale)
+#            ditzz RDP | Powered by ditzz-devnest (v5 - ARM64 Fixed)
 # -----------------------------------------------------------------------------------
 # Deskripsi:
 # Alur kerja ini menggunakan Tailscale untuk membuat koneksi RDP yang aman,
@@ -72,9 +72,11 @@ jobs:
         env:
           TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
         run: |
-          Write-Host "📥 Mengunduh versi terbaru Tailscale..."
-          # Menggunakan URL yang selalu menunjuk ke versi stabil terbaru
-          Invoke-WebRequest -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-latest.msi" -OutFile "tailscale.msi"
+          Write-Host "📥 Mengunduh versi terbaru Tailscale untuk ARM64..."
+          
+          # === PERBAIKAN DI SINI: Menggunakan URL yang benar untuk ARM64 ===
+          $url = "https://pkgs.tailscale.com/stable/tailscale-setup-stable-arm64.msi"
+          Invoke-WebRequest -Uri $url -OutFile "tailscale.msi"
           
           Write-Host "⚙️ Menginstal Tailscale..."
           Start-Process msiexec.exe -ArgumentList "/i tailscale.msi /quiet" -Wait
@@ -97,6 +99,8 @@ jobs:
 
           Write-Host "📡 Memverifikasi koneksi Tailscale..."
           for ($i = 1; $i -le $max_retries; $i++) {
+              # Menambahkan delay kecil di awal untuk memberi waktu proses tailscale dimulai
+              Start-Sleep -Seconds 2
               $status = (& "C:\Program Files\Tailscale\tailscale.exe" status --json | ConvertFrom-Json)
               if ($status.BackendState -eq "Running" -and $status.Self.Online) {
                   $ts_ip = $status.Self.TailscaleIPs[0]
@@ -108,6 +112,9 @@ jobs:
                   Start-Sleep -Seconds $retry_delay_seconds
               } else {
                   Write-Error "❌ Gagal mendapatkan koneksi Tailscale yang stabil setelah $max_retries percobaan."
+                  # Tampilkan status terakhir untuk debugging jika gagal
+                  Write-Host "Status Tailscale Terakhir:"
+                  & "C:\Program Files\Tailscale\tailscale.exe" status
                   exit 1
               }
           }
