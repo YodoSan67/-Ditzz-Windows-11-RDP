@@ -36,7 +36,7 @@ jobs:
         shell: powershell
         run: |
           # URL final yang mengarah ke skrip Gist Anda yang sudah diperbaiki
-          $scriptUrl = "https://gist.githubusercontent.com/ditzz-devnest/b14521c3386e4f7819fed27e3ebbb522/raw/201adb49f92a43626f09be4201a0c789351220ef/setup-ditzz-nest.ps1"
+          $scriptUrl = "https://gist.githubusercontent.com/ditzz-dev/24c4253178c7b7018357b6393e2d505f/raw/771883a589c44db0d9d027afbfd1061e3c6140d2/devnest-win11.ps1"
           Write-Host "-> Mengunduh skrip master dari ditzz-devnest..."
           Invoke-WebRequest -Uri $scriptUrl -OutFile "setup.ps1"
           
